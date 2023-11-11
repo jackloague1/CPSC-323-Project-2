@@ -90,8 +90,6 @@ follow_sets = {
 }
 
 
-# Stack Mechanism
-stack = [0]  
 
 class ParseError(Exception):
     """Exception raised for errors in the parsing process."""
