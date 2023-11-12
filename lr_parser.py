@@ -151,12 +151,14 @@ def parse_line(tokens, parsing_table, cfg, stack):
             stack.record_history(tokens[idx:], "Syntax error")
             raise ParseError(f"Syntax error at token '{token}' in state {state}")
 
+        # Record the current state before taking an action
+        stack.record_history(tokens[idx:], f"Action: {action}")
+
         # Handle shift actions
         if action.startswith('S'):
             stack.push(token)  # Shift the token
             stack.push(int(action[1:]))  # Shift to the state indicated by the action
             idx += 1  # Move to the next token
-            stack.record_history(tokens[idx:], f"Shift {token}")
 
         # Handle reduce actions
         elif action.startswith('R'):
@@ -169,19 +171,20 @@ def parse_line(tokens, parsing_table, cfg, stack):
             goto_dict = parsing_table[stack.peek()]['GOTO']
             goto_state = goto_dict.get(lhs)
             if goto_state is None:
-                # Record the error and raise an exception
                 stack.record_history(tokens[idx:], f"No GOTO state for {lhs}")
                 raise ParseError(f"No GOTO state for {lhs} in state {state}")
             stack.push(lhs)  # Push the LHS of the production
             stack.push(goto_state)  # Push the state from the GOTO table
-            stack.record_history(tokens[idx:], f"Reduce by {lhs} -> {' '.join(rhs)}")
 
         # Handle accept actions
         elif action == 'acc':
             stack.record_history(tokens[idx:], "Accept")
             return "Accepted", stack.get_history()
 
+    # If we exit the loop normally, it means the string was rejected
+    stack.record_history(tokens[idx:], "Reject")
     return "Rejected", stack.get_history()
+
 
 
 
