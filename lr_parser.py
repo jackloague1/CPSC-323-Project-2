@@ -17,12 +17,12 @@ class ParsingStack:
 
     def push(self, item):
         self.items.append(item)
-        self.record_history()  # Record history after each operation
+        # self.record_history()  # Record history after each operation
 
     def pop(self):
         if not self.is_empty():
             popped = self.items.pop()
-            self.record_history()  # Record history after each operation
+            # self.record_history()  # Record history after each operation
             return popped
 
     def peek(self):
@@ -149,7 +149,8 @@ def parse_line(tokens, parsing_table, cfg, stack):
         if action is None:
             # Record the syntax error and raise an exception
             stack.record_history(tokens[idx:], "Syntax error")
-            raise ParseError(f"Syntax error at token '{token}' in state {state}")
+            break
+            # raise ParseError(f"Syntax error at token '{token}' in state {state}")
 
         # Record the current state before taking an action
         stack.record_history(tokens[idx:], f"Action: {action}")
@@ -210,7 +211,7 @@ def main(input_file, output_file):
                 for entry in history:
                     stack_repr = ' '.join(map(str, entry['stack']))  # Format stack as string
                     input_repr = ' '.join(entry['input'])  # Format remaining input as string
-                    f.write(f"{entry['step']}\t{stack_repr}\t{input_repr}\t{entry['action']}\n")
+                    f.write(f"{entry['step'] : <20}{stack_repr : <20}{input_repr : <20}{entry['action'] : <20}\n")
                 f.write(f"{result}\n\n")
         except ParseError as e:
             with open(output_file, 'a') as f:
