@@ -34,12 +34,13 @@ class ParsingStack:
     def record_history(self, token=None, action=None):
         # This method records the state of the stack, input, and action
         # token and action are optional arguments to record the current processing token and action taken
-        current_state = {'step': len(self.history),
-                         'stack': self.items[:],
-                         'input': token,
-                         'action': action}
+        current_state = {
+            'step': len(self.history) + 1,  # steps are usually 1-based
+            'stack': self.items.copy(),  # Copy the current stack state
+            'input': token if token is not None else [],  # Make sure this is a list
+            'action': action
+        }
         self.history.append(current_state)
-
     def __str__(self):
         return str(self.items)
 
@@ -48,8 +49,36 @@ class ParsingStack:
         return self.history
 
 
-# LR Parsing Table
 parsing_table = {
+    0: {'ACTION': {'id': 'S5', '+': None, '*': None, '(': 'S4', ')': None, '$': None},
+        'GOTO': {'E': 1, 'T': 2, 'F': 3}},
+    1: {'ACTION': {'id': None, '+': 'S6', '*': None, '(': None, ')': None, '$': 'acc'},
+        'GOTO': {}},
+    2: {'ACTION': {'id': None, '+': 'R2', '*': 'S7', '(': None, ')': 'R2', '$': 'R2'},
+        'GOTO': {'E': None, 'T': None, 'F': None}},  # Assuming no GOTO transitions for this state
+    3: {'ACTION': {'id': None, '+': 'R4', '*': 'R4', '(': None, ')': 'R4', '$': 'R4'},
+        'GOTO': {}},
+    4: {'ACTION': {'id': 'S5', '+': None, '*': None, '(': 'S4', ')': None, '$': None},
+        'GOTO': {'E': 8, 'T': 2, 'F': 3}},
+    5: {'ACTION': {'id': None, '+': 'R6', '*': 'R6', '(': None, ')': 'R6', '$': 'R6'},
+        'GOTO': {}},
+    6: {'ACTION': {'id': 'S5', '+': None, '*': None, '(': 'S4', ')': None, '$': None},
+        'GOTO': {'T': 9, 'F': 3}},
+    7: {'ACTION': {'id': 'S5', '+': None, '*': None, '(': 'S4', ')': None, '$': None},
+        'GOTO': {'F': 10}},
+    8: {'ACTION': {'id': None, '+': 'S6', '*': None, '(': None, ')': 'S11', '$': None},
+        'GOTO': {}},
+    9: {'ACTION': {'id': None, '+': 'R1', '*': 'S7', '(': None, ')': 'R1', '$': 'R1'},
+        'GOTO': {}},
+    10: {'ACTION': {'id': None, '+': 'R3', '*': 'R3', '(': None, ')': 'R3', '$': 'R3'},
+         'GOTO': {}},
+    11: {'ACTION': {'id': None, '+': 'R5', '*': 'R5', '(': None, ')': 'R5', '$': 'R5'},
+         'GOTO': {}},
+}
+
+
+# LR Parsing Table
+parsing_tabl = {
     0: {'id': 'S5', '+': None, '*': None, '(': 'S4', ')': None, '$': None, 'E': 1, 'T': 2, 'F': 3},
     1: {'id': None, '+': 'S6', '*': None, '(': None, ')': None, '$': 'acc', 'E': None, 'T': None, 'F': None},
     2: {'id': None, '+': 'R2', '*': 'S7', '(': None, ')': 'R2', '$': 'R2', 'E': None, 'T': None, 'F': None},
@@ -90,28 +119,42 @@ follow_sets = {
 }
 
 
-
 class ParseError(Exception):
     """Exception raised for errors in the parsing process."""
     pass
 
+def tokenize(expression):
+    tokens = []
+    token = ''
+    for char in expression:
+        if char in {'+', '*', '(', ')', '$'}:
+            if token:  # add the token that was being built up if there is one
+                tokens.append(token)
+                token = ''  # reset the token
+            tokens.append(char)  # add the single-character token
+        else:
+            token += char  # build up a token
+    if token:  # add the last token if there is one
+        tokens.append(token)
+    return tokens
 def parse_line(tokens, parsing_table, cfg, stack):
     idx = 0  # To keep track of the current token index
 
     while idx < len(tokens):
         state = stack.peek()
         token = tokens[idx]
-        action = parsing_table.get(state, {}).get(token)
+        action_dict = parsing_table[state]['ACTION']
+        action = action_dict.get(token)
 
-        # Handle syntax errors
         if action is None:
+            # Record the syntax error and raise an exception
             stack.record_history(tokens[idx:], "Syntax error")
             raise ParseError(f"Syntax error at token '{token}' in state {state}")
 
         # Handle shift actions
         if action.startswith('S'):
-            stack.push(token)  # Push token
-            stack.push(int(action[1:]))  # Push state
+            stack.push(token)  # Shift the token
+            stack.push(int(action[1:]))  # Shift to the state indicated by the action
             idx += 1  # Move to the next token
             stack.record_history(tokens[idx:], f"Shift {token}")
 
@@ -119,13 +162,18 @@ def parse_line(tokens, parsing_table, cfg, stack):
         elif action.startswith('R'):
             production_index = int(action[1:])
             lhs, rhs = cfg[production_index]
-            for _ in range(len(rhs)):  # Pop symbols and states
-                stack.pop()  # Pop state
-                stack.pop()  # Pop symbol
+            # Pop the stack for each symbol in the RHS of the production
+            for _ in range(len(rhs) * 2):  # Pop both state and symbol for each RHS symbol
+                stack.pop()
             # Look up the next state to go to from the GOTO part of the parsing table
-            goto_state = parsing_table[stack.peek()]['GOTO'][lhs]
-            stack.push(lhs)  # Push LHS of production
-            stack.push(goto_state)  # Push new state
+            goto_dict = parsing_table[stack.peek()]['GOTO']
+            goto_state = goto_dict.get(lhs)
+            if goto_state is None:
+                # Record the error and raise an exception
+                stack.record_history(tokens[idx:], f"No GOTO state for {lhs}")
+                raise ParseError(f"No GOTO state for {lhs} in state {state}")
+            stack.push(lhs)  # Push the LHS of the production
+            stack.push(goto_state)  # Push the state from the GOTO table
             stack.record_history(tokens[idx:], f"Reduce by {lhs} -> {' '.join(rhs)}")
 
         # Handle accept actions
@@ -133,8 +181,8 @@ def parse_line(tokens, parsing_table, cfg, stack):
             stack.record_history(tokens[idx:], "Accept")
             return "Accepted", stack.get_history()
 
-    # If the function hasn't returned by now, there's been an error
     return "Rejected", stack.get_history()
+
 
 
 def parse_input(input_lines, parsing_table, cfg):
@@ -150,14 +198,16 @@ def parse_input(input_lines, parsing_table, cfg):
 def main(input_file, output_file):
     input_lines = read_input_file(input_file)
     for line in input_lines:
-        tokens = line.split()  # Or use a custom tokenizer if needed
+        tokens = tokenize(line)  # Use the new tokenizer function
         stack = ParsingStack()  # Create a new stack for each line of input
         try:
             result, history = parse_line(tokens, parsing_table, cfg, stack)
             # Write the result and history to the output file
             with open(output_file, 'a') as f:
                 for entry in history:
-                    f.write(f"{entry['step']}\t{entry['stack']}\t{entry['input']}\t{entry['action']}\n")
+                    stack_repr = ' '.join(map(str, entry['stack']))  # Format stack as string
+                    input_repr = ' '.join(entry['input'])  # Format remaining input as string
+                    f.write(f"{entry['step']}\t{stack_repr}\t{input_repr}\t{entry['action']}\n")
                 f.write(f"{result}\n\n")
         except ParseError as e:
             with open(output_file, 'a') as f:
