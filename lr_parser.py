@@ -15,14 +15,16 @@ class ParsingStack:
         self.items = [0]  # Initialize the stack with the start state
         self.history = []  # Initialize history for recording steps
 
-    def push(self, item):
+    def push(self, item, remaining_input):
         self.items.append(item)
-        self.record_history()  # Record history after each operation
+        self.record_history(remaining_input)  # Record history after each operation
 
-    def pop(self):
+
+
+    def pop(self, remaining_input):
         if not self.is_empty():
             popped = self.items.pop()
-            self.record_history()  # Record history after each operation
+            self.record_history(remaining_input)  # Record history after each operation
             return popped
 
     def peek(self):
@@ -31,13 +33,13 @@ class ParsingStack:
     def is_empty(self):
         return len(self.items) == 0
 
-    def record_history(self, token=None, action=None):
+    def record_history(self, remaining_input, action=None):
         # This method records the state of the stack, input, and action
         # token and action are optional arguments to record the current processing token and action taken
         current_state = {
             'step': len(self.history) + 1,  # steps are usually 1-based
             'stack': self.items.copy(),  # Copy the current stack state
-            'input': token if token is not None else [],  # Make sure this is a list
+            'input': remaining_input,   # Record the remaining input tokens
             'action': action
         }
         self.history.append(current_state)
@@ -145,19 +147,20 @@ def parse_line(tokens, parsing_table, cfg, stack):
         token = tokens[idx]
         action_dict = parsing_table[state]['ACTION']
         action = action_dict.get(token)
+        remaining_input = tokens[idx:]  # Get the remaining input tokens
 
         if action is None:
             # Record the syntax error and raise an exception
-            stack.record_history(tokens[idx:], "Syntax error")
+            stack.record_history(remaining_input, "Syntax error")
             raise ParseError(f"Syntax error at token '{token}' in state {state}")
 
         # Record the current state before taking an action
-        stack.record_history(tokens[idx:], f"Action: {action}")
+        stack.record_history(remaining_input, f"Action: {action}")
 
         # Handle shift actions
         if action.startswith('S'):
-            stack.push(token)  # Shift the token
-            stack.push(int(action[1:]))  # Shift to the state indicated by the action
+            stack.push(token, remaining_input)  # Shift the token and record history with remaining input
+            stack.push(int(action[1:]), remaining_input)  # Shift to the state indicated by the action
             idx += 1  # Move to the next token
 
         # Handle reduce actions
@@ -166,25 +169,24 @@ def parse_line(tokens, parsing_table, cfg, stack):
             lhs, rhs = cfg[production_index]
             # Pop the stack for each symbol in the RHS of the production
             for _ in range(len(rhs) * 2):  # Pop both state and symbol for each RHS symbol
-                stack.pop()
+                stack.pop(remaining_input)  # Pop and record history with remaining input
             # Look up the next state to go to from the GOTO part of the parsing table
             goto_dict = parsing_table[stack.peek()]['GOTO']
             goto_state = goto_dict.get(lhs)
             if goto_state is None:
-                stack.record_history(tokens[idx:], f"No GOTO state for {lhs}")
+                stack.record_history(remaining_input, f"No GOTO state for {lhs}")
                 raise ParseError(f"No GOTO state for {lhs} in state {state}")
-            stack.push(lhs)  # Push the LHS of the production
-            stack.push(goto_state)  # Push the state from the GOTO table
+            stack.push(lhs, remaining_input)  # Push the LHS of the production and record history
+            stack.push(goto_state, remaining_input)  # Push the state from the GOTO table
 
         # Handle accept actions
         elif action == 'acc':
-            stack.record_history(tokens[idx:], "Accept")
+            stack.record_history(remaining_input, "Accept")
             return "Accepted", stack.get_history()
 
     # If we exit the loop normally, it means the string was rejected
-    stack.record_history(tokens[idx:], "Reject")
+    stack.record_history(remaining_input, "Reject")
     return "Rejected", stack.get_history()
-
 
 
 
@@ -198,28 +200,46 @@ def parse_input(input_lines, parsing_table, cfg):
             parsed_results.append(str(e))
     return parsed_results
 
-def main(input_file, output_file):
-    input_lines = read_input_file(input_file)
-    for line in input_lines:
-        tokens = tokenize(line)  # Use the new tokenizer function
-        stack = ParsingStack()  # Create a new stack for each line of input
-        try:
-            result, history = parse_line(tokens, parsing_table, cfg, stack)
-            # Write the result and history to the output file
-            with open(output_file, 'a') as f:
-                for entry in history:
-                    stack_repr = ' '.join(map(str, entry['stack']))  # Format stack as string
-                    input_repr = ' '.join(entry['input'])  # Format remaining input as string
-                    f.write(f"{entry['step']}\t{stack_repr}\t{input_repr}\t{entry['action']}\n")
-                f.write(f"{result}\n\n")
-        except ParseError as e:
-            with open(output_file, 'a') as f:
-                f.write(str(e) + '\n')
+def main():
+    expression = input("Enter the expression to parse: ")  # Read input from the terminal
+    tokens = tokenize(expression)  # Use the tokenizer function
+    stack = ParsingStack()  # Create a new stack for parsing
+    try:
+        result, history = parse_line(tokens, parsing_table, cfg, stack)
+        # Print the result and history
+        for entry in history:
+            stack_repr = ' '.join(map(str, entry['stack']))  # Format stack as string
+            input_repr = ' '.join(entry['input'])  # Format remaining input as string
+            print(f"{entry['step']}\t{stack_repr}\t{input_repr}\t{entry['action']}")
+        print(f"{result}\n")
+    except ParseError as e:
+        print(e)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python lr_parser.py <inputfile> <outputfile>")
-    else:
-        input_file_path = sys.argv[1]
-        output_file_path = sys.argv[2]
-        main(input_file_path, output_file_path)
+    main()
+
+# def main(input_file, output_file):
+#     input_lines = read_input_file(input_file)
+#     for line in input_lines:
+#         tokens = tokenize(line)  # Use the new tokenizer function
+#         stack = ParsingStack()  # Create a new stack for each line of input
+#         try:
+#             result, history = parse_line(tokens, parsing_table, cfg, stack)
+#             # Write the result and history to the output file
+#             with open(output_file, 'a') as f:
+#                 for entry in history:
+#                     stack_repr = ' '.join(map(str, entry['stack']))  # Format stack as string
+#                     input_repr = ' '.join(entry['input'])  # Format remaining input as string
+#                     f.write(f"{entry['step']}\t{stack_repr}\t{input_repr}\t{entry['action']}\n")
+#                 f.write(f"{result}\n\n")
+#         except ParseError as e:
+#             with open(output_file, 'a') as f:
+#                 f.write(str(e) + '\n')
+
+# if __name__ == "__main__":
+#     if len(sys.argv) != 3:
+#         print("Usage: python lr_parser.py <inputfile> <outputfile>")
+#     else:
+#         input_file_path = sys.argv[1]
+#         output_file_path = sys.argv[2]
+#         main(input_file_path, output_file_path)
