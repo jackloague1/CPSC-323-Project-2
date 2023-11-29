@@ -152,7 +152,8 @@ def parse_line(tokens, parsing_table, cfg, stack):
         if action is None:
             # Record the syntax error and raise an exception
             stack.record_history(remaining_input, "Syntax error")
-            raise ParseError(f"Syntax error at token '{token}' in state {state}")
+            break
+            #raise ParseError(f"Syntax error at token '{token}' in state {state}")
 
         # Record the current state before taking an action
         stack.record_history(remaining_input, f"Action: {action}")
@@ -175,7 +176,8 @@ def parse_line(tokens, parsing_table, cfg, stack):
             goto_state = goto_dict.get(lhs)
             if goto_state is None:
                 stack.record_history(remaining_input, f"No GOTO state for {lhs}")
-                raise ParseError(f"No GOTO state for {lhs} in state {state}")
+                break
+                # raise ParseError(f"No GOTO state for {lhs} in state {state}")
             stack.push(lhs, remaining_input)  # Push the LHS of the production and record history
             stack.push(goto_state, remaining_input)  # Push the state from the GOTO table
 
@@ -207,10 +209,13 @@ def main():
     try:
         result, history = parse_line(tokens, parsing_table, cfg, stack)
         # Print the result and history
+        print(f"{'Step' : <20}{'Stack' : <20}{'Input' : <20}{'Action'}")
+        print(f"{'----' : <20}{'-----' : <20}{'-----' : <20}{'------'}")
         for entry in history:
             stack_repr = ' '.join(map(str, entry['stack']))  # Format stack as string
             input_repr = ' '.join(entry['input'])  # Format remaining input as string
-            print(f"{entry['step']}\t{stack_repr}\t{input_repr}\t{entry['action']}")
+            #print(f"{entry['step']}\t{stack_repr}\t{input_repr}\t{entry['action']}")
+            print(f"{entry['step'] : <20}{stack_repr : <20}{input_repr : <20}{entry['action']}")
         print(f"{result}\n")
     except ParseError as e:
         print(e)
